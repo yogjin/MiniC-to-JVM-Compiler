@@ -8,6 +8,8 @@ import org.antlr.v4.runtime.tree.ParseTreeListener;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
+import com.sun.org.apache.xerces.internal.parsers.SecurityConfiguration;
+
 import generated.MiniCBaseListener;
 import generated.MiniCParser;
 import generated.MiniCParser.ExprContext;
@@ -36,7 +38,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 	public void enterFun_decl(MiniCParser.Fun_declContext ctx) { //함수정보와 파라미터 정보를 symbolTable에 저장.
 		symbolTable.initFunDecl();
 		
-		String fname = getFunName(ctx);
+		String fname = getFunName(ctx);//함수이름.
 		ParamsContext params;
 		
 		if (fname.equals("main")) {
@@ -45,7 +47,9 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 			symbolTable.putFunSpecStr(ctx);
 			params = (MiniCParser.ParamsContext) ctx.getChild(3);
 			symbolTable.putParams(params);
-		}		
+		}
+		
+		setCurrentMethodName(fname);//현재 메소드
 	}
 		
 	
@@ -502,6 +506,9 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		} else {	
 			expr = newTexts.get(ctx.args()) 
 					+ "invokestatic " + getCurrentClassName()+ "/" + symbolTable.getFunSpecStr(fname) + "\n";
+			
+			expr += "현재 메소드 : " + getCurrentMethodName() +"\n" + "호출된 함수 : " + fname + "\n";
+			symbolTable.putMethodCall(getCurrentMethodName(), fname);
 		}	
 		
 		return expr;
