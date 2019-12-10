@@ -39,10 +39,14 @@ public class SymbolTable {
 	static public class FInfo {
 		public String sigStr;
 	}
+	static public class callMethodInfo{
+		public Map<String, Integer> calledMethods = new HashMap<>();//호출된 함수와 호출 횟수.
+	}
 	
 	private Map<String, VarInfo> _lsymtable = new HashMap<>();	// local v.
 	private Map<String, VarInfo> _gsymtable = new HashMap<>();	// global v.
 	private Map<String, FInfo> _fsymtable = new HashMap<>();	// function 
+	private Map<String, callMethodInfo> _msymtable = new HashMap<>(); //호출한 메소드.
 	
 	//table에 넣을 변수들의 ID. 전역변수로 선언. table에 넣을때마다 ID를 ++해서 변수들끼리 서로 겹치지않게 해준다.
 	private int _globalVarID = 0;
