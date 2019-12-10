@@ -150,4 +150,14 @@ public class BytecodeGenListenerHelper {
 	static String getCurrentClassName() {
 		return "Test";
 	}
+	static String currentMethodName;
+	
+	static void setCurrentMethodName(String methodName) {
+		currentMethodName = methodName;
+	}
+	
+	static String getCurrentMethodName() {
+		return currentMethodName;
+	}
+	
 }
