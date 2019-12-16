@@ -27,7 +27,7 @@ import static listener.main.SymbolTable.*;
 public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeListener {
 	ParseTreeProperty<String> newTexts = new ParseTreeProperty<String>();
 	SymbolTable symbolTable = new SymbolTable();
-	
+	DrawFunctionCallGraph drawFunctionCallGraph = new DrawFunctionCallGraph();
 	int tab = 0;
 	int label = 0;
 	
@@ -35,21 +35,29 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 	
 	//fun_decl	: type_spec IDENT '(' params ')' compound_stmt ;
 	@Override
-	public void enterFun_decl(MiniCParser.Fun_declContext ctx) { //ÇÔ¼öÁ¤º¸¿Í ÆÄ¶ó¹ÌÅÍ Á¤º¸¸¦ symbolTable¿¡ ÀúÀå.
+	public void enterFun_decl(MiniCParser.Fun_declContext ctx) { //í•¨ìˆ˜ì •ë³´ì™€ íŒŒë¼ë¯¸í„° ì •ë³´ë¥¼ symbolTableì— ì €ì¥.
 		symbolTable.initFunDecl();
 		
-		String fname = getFunName(ctx);//ÇÔ¼öÀÌ¸§.
+		String fname = getFunName(ctx);//í•¨ìˆ˜ì´ë¦„.
 		ParamsContext params;
 		
 		if (fname.equals("main")) {
 			symbolTable.putLocalVar("args", Type.INTARRAY);
+			drawFunctionCallGraph.depth = 0;//main -> depth 0ìœ¼ë¡œ ì´ˆê¸°í™”
+			drawFunctionCallGraph.currentFlowIsMain = true;//handleFunCallì—ì„œ ì‚¬ìš©.
+			drawFunctionCallGraph.currentGraphName = fname;
+			drawFunctionCallGraph.drawNewFunction(fname);
 		} else {
 			symbolTable.putFunSpecStr(ctx);
 			params = (MiniCParser.ParamsContext) ctx.getChild(3);
 			symbolTable.putParams(params);
+			
+			//drawFunctionCallGraph.depth++;
+			drawFunctionCallGraph.currentGraphName = fname;
+			drawFunctionCallGraph.drawNewFunction(fname);
 		}
 		
-		setCurrentMethodName(fname);//ÇöÀç ¸Ş¼Òµå
+		setCurrentMethodName(fname);//í˜„ì¬ ë©”ì†Œë“œ
 	}
 		
 	
@@ -86,7 +94,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 	//program	: decl+			
 	@Override
 	public void exitProgram(MiniCParser.ProgramContext ctx) {
-		String classProlog = getFunProlog();//JVM Ã¹ºÎºĞ. class public Text... 
+		String classProlog = getFunProlog();//JVM ì²«ë¶€ë¶„. class public Text... 
 		
 		String fun_decl = "", var_decl = "";
 		
@@ -100,7 +108,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		newTexts.put(ctx, classProlog + var_decl + fun_decl);
 		
 		System.out.println(newTexts.get(ctx));
-		
+		drawFunctionCallGraph.printGraph();
 	}	
 	
 	
@@ -163,15 +171,15 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		if(ctx.stmt() != null) {
 			thenStmt = newTexts.get(ctx.stmt());
 		}
-		String lend = symbolTable.newLabel();		//whileÃ¹ºÎºĞ
-		String lendElse = symbolTable.newLabel();	//whileÀÌ ³¡³ª°í ¹Ù±ùºÎºĞ
+		String lend = symbolTable.newLabel();		//whileì²«ë¶€ë¶„
+		String lendElse = symbolTable.newLabel();	//whileì´ ëë‚˜ê³  ë°”ê¹¥ë¶€ë¶„
 		
-		stmt += lend + ": "	+"\n"				//while¹® Ã¹ºÎºĞ
-				+ condExpr +"\n"					//while¹® Ã³À½ Á¶°Ç¹® ºÎÅÍ °Ë»ç.
-				+ "ifeq " + lendElse + "\n"	//Á¶°ÇÀÌ °ÅÁşÀÌ¸é lendElse·Î.
-				+ thenStmt +"\n"				//Á¶°ÇÀÌ ÂüÀÏ½Ã
+		stmt += lend + ": "	+"\n"				//whileë¬¸ ì²«ë¶€ë¶„
+				+ condExpr +"\n"					//whileë¬¸ ì²˜ìŒ ì¡°ê±´ë¬¸ ë¶€í„° ê²€ì‚¬.
+				+ "ifeq " + lendElse + "\n"	//ì¡°ê±´ì´ ê±°ì§“ì´ë©´ lendElseë¡œ.
+				+ thenStmt +"\n"				//ì¡°ê±´ì´ ì°¸ì¼ì‹œ
 				+ "goto " + lend + "\n"
-				+ lendElse + ": "+"\n";			//while ¹Ù±ùÀ¸·Î Á¡ÇÁ
+				+ lendElse + ": "+"\n";			//while ë°”ê¹¥ìœ¼ë¡œ ì í”„
 				
 		newTexts.put(ctx, stmt);
 	}
@@ -219,7 +227,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		
 		if (isDeclWithInit(ctx)) {
 			//symbolTable.putLocalVarWithInitVal(getLocalVarName(ctx), Type.INT, initVal(ctx));
-			//(¾È ±×·¯¸é °°Àº º¯¼ö°¡ Å×ÀÌºí¿¡ µÎ ¹ø µé¾î°¨. ÀÌ°Íµµ ´çÀå ¹®Á¦´Â ¾øÀ½. ¿Ö³ÄÇÏ¸é °°Àº º¯¼ö¿¡ ´ëÇØ µ¥ÀÌÅÍ¸¦ µ¤¾î¾²¹Ç·Î, °á±¹ ³ªÁß °Í¸¸ ÀÇ¹ÌÀÖÀ¸¹Ç·Î)
+			//(ì•ˆ ê·¸ëŸ¬ë©´ ê°™ì€ ë³€ìˆ˜ê°€ í…Œì´ë¸”ì— ë‘ ë²ˆ ë“¤ì–´ê°. ì´ê²ƒë„ ë‹¹ì¥ ë¬¸ì œëŠ” ì—†ìŒ. ì™œëƒí•˜ë©´ ê°™ì€ ë³€ìˆ˜ì— ëŒ€í•´ ë°ì´í„°ë¥¼ ë®ì–´ì“°ë¯€ë¡œ, ê²°êµ­ ë‚˜ì¤‘ ê²ƒë§Œ ì˜ë¯¸ìˆìœ¼ë¯€ë¡œ)
 			String vId = symbolTable.getVarId(ctx);
 			varDecl += "ldc " + ctx.LITERAL().getText() + "\n"
 					+ "istore_" + vId + "\n"; 			
@@ -259,7 +267,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 	@Override
 	public void exitIf_stmt(MiniCParser.If_stmtContext ctx) {
 		String stmt = "";
-		String condExpr= newTexts.get(ctx.expr());//if(x==3)¿¡¼­ x==3¿¡ ÇØ´ç.
+		String condExpr= newTexts.get(ctx.expr());//if(x==3)ì—ì„œ x==3ì— í•´ë‹¹.
 		String thenStmt = newTexts.get(ctx.stmt(0));
 		
 		String lend = symbolTable.newLabel();
@@ -268,11 +276,11 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		//System.out.println("thenStmt :" + thenStmt);
 		if(noElse(ctx)) {		
 			stmt += condExpr
-					+ "ifeq " + lend + "\n"//Âü(1)ÀÌ¸é thenStmt·Î. ¾Æ´Ï¸é lend·Î Á¡ÇÁ
+					+ "ifeq " + lend + "\n"//ì°¸(1)ì´ë©´ thenStmtë¡œ. ì•„ë‹ˆë©´ lendë¡œ ì í”„
 					+ thenStmt + "\n"
 					+ lend + ": " + "\n";	
 		}
-		else {//condExprÀÌ ÂüÀÌ¸é ½ºÅÃ¿¡ 1³Ö´Â´Ù.
+		else {//condExprì´ ì°¸ì´ë©´ ìŠ¤íƒì— 1ë„£ëŠ”ë‹¤.
 			String elseStmt = newTexts.get(ctx.stmt(1));
 			stmt += condExpr + "\n"
 					+ "ifeq " + lendElse + "\n"
@@ -295,10 +303,17 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		if(ctx.getChildCount() == 2) {
 			stmt += "return\n";
 		}
-		else if(ctx.getChildCount() == 3) {//exitExprºÎºĞ Âü°í.¹Ù·Î¹Ø.
+		else if(ctx.getChildCount() == 3) {//exitExprë¶€ë¶„ ì°¸ê³ .ë°”ë¡œë°‘.
 			stmt += newTexts.get(ctx.expr());
 			stmt += "ireturn\n";
 		}
+		
+		if(!drawFunctionCallGraph.currentFlowIsMain) {//mainë¬¸ì´ë©´ return ê·¸ë¦´í•„ìš”x
+			drawFunctionCallGraph.drawReturnState();//ë¦¬í„´ ê·¸ë¦¬ê¸°.
+		}
+		drawFunctionCallGraph.addGraph(drawFunctionCallGraph.currentGraphName, drawFunctionCallGraph.graph);
+		//System.out.println(drawFunctionCallGraph.graph);
+		drawFunctionCallGraph.clearGraph();
 		newTexts.put(ctx, stmt);
 	}
 
@@ -325,7 +340,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 					expr += "ldc " + literalStr + " \n";
 				}
 			} else if(ctx.getChildCount() == 2) { // UnaryOperation
-			expr = handleUnaryExpr(ctx, newTexts.get(ctx) + expr);	//newTexts.get(ctx)°¡ nullÀÎ °æ¿ì handleUnaryExpr¾È¿¡¼­ nullÀÎÁö ÆÇ´ÜÇØ¾ßÇÔ.		
+			expr = handleUnaryExpr(ctx, newTexts.get(ctx) + expr);	//newTexts.get(ctx)ê°€ nullì¸ ê²½ìš° handleUnaryExprì•ˆì—ì„œ nullì¸ì§€ íŒë‹¨í•´ì•¼í•¨.		
 		}
 		else if(ctx.getChildCount() == 3) {	 
 			if(ctx.getChild(0).getText().equals("(")) { 		// '(' expr ')'
@@ -361,25 +376,25 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 		String lend = symbolTable.newLabel();
 		
 		//if(expr.equals("null")) {
-			expr = "";	//exprÀÌ nullÀÌ¸é ""·Î ÃÊ±âÈ­ÇØÁÜ.
+			expr = "";	//exprì´ nullì´ë©´ ""ë¡œ ì´ˆê¸°í™”í•´ì¤Œ.
 		//}
 		//if(ctx.expr(0))
-			String vId = symbolTable.getVarId(ctx.expr(0).getText()); //unaryExprÀÇ °á°ú¸¦ ÀúÀåÇÒ id¸¦ °¡Á®¿Â´Ù. (istore_vId)
+			String vId = symbolTable.getVarId(ctx.expr(0).getText()); //unaryExprì˜ ê²°ê³¼ë¥¼ ì €ì¥í•  idë¥¼ ê°€ì ¸ì˜¨ë‹¤. (istore_vId)
 			
 		expr += newTexts.get(ctx.expr(0));
 		switch(ctx.getChild(0).getText()) {
-		case "-":								//int sum = -10;°ú °°Àº°Ç ¾ÈµÊ. g4ÆÄÀÏ¿¡ var_declº¸¸é LITERAL¸¸ ¹Ş±â¶§¹®. 
-			expr += "           ineg \n"; 		//MiniC´Â  int sum; sum = -5050; À¸·Î »ç¿ë
+		case "-":								//int sum = -10;ê³¼ ê°™ì€ê±´ ì•ˆë¨. g4íŒŒì¼ì— var_declë³´ë©´ LITERALë§Œ ë°›ê¸°ë•Œë¬¸. 
+			expr += "           ineg \n"; 		//MiniCëŠ”  int sum; sum = -5050; ìœ¼ë¡œ ì‚¬ìš©
 			break;
 		case "--":
-			expr += "ldc 1" + "\n"				//½ºÅÃ¿¡ 1³Ö°í
-					+ "isub" + "\n"				//»©ÁØ µÚ 
-					+ "istore_" + vId + "\n";	//±× °ªÀ» ´Ù½Ã ½ºÅÃ¿¡ ÀúÀå.
+			expr += "ldc 1" + "\n"				//ìŠ¤íƒì— 1ë„£ê³ 
+					+ "isub" + "\n"				//ë¹¼ì¤€ ë’¤ 
+					+ "istore_" + vId + "\n";	//ê·¸ ê°’ì„ ë‹¤ì‹œ ìŠ¤íƒì— ì €ì¥.
 			break;
 		case "++":
-			expr += "ldc 1" + "\n"				//½ºÅÃ¿¡ 1³Ö°í
-					+ "iadd" + "\n"				//´õÇÑµÚ 
-					+ "istore_" + vId + "\n";   //±× °ªÀ» ´Ù½Ã ½ºÅÃ¿¡ ÀúÀå.
+			expr += "ldc 1" + "\n"				//ìŠ¤íƒì— 1ë„£ê³ 
+					+ "iadd" + "\n"				//ë”í•œë’¤ 
+					+ "istore_" + vId + "\n";   //ê·¸ ê°’ì„ ë‹¤ì‹œ ìŠ¤íƒì— ì €ì¥.
 		
 			break;
 		case "!":
@@ -427,25 +442,25 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 				expr += "isub \n"; break;
 				
 			case "==":
-				expr += "isub " + "\n"					//½ºÅÃ¿¡ ÀÖ´Â µÎ °ªÀ» »©¼­
-						+ "ifeq "+ l2 + "\n"			//ifeq : ½ºÅÃ¿¡ ÀÖ´Â°ª°ú 0À» ºñ±³ÈÄ °°À¸¸é l2·Î Á¡ÇÁ. °°À¸¸é µÚ¿¡¼­ ½ºÅÃ¿¡ 1³ÖÀ½. ´Ù¸£¸é 0³ÖÀ½
-						+ "ldc 0" + "\n"				//´Ù¸£¸é 0³ÖÀ½
-						+ "goto " + lend + "\n"			//lend:0³Ö°í if_stmt³ª while°°Àº°÷À¸·Î goto
-						+ l2 + ": "+ "\n" + "ldc 1" + "\n"	//°°À¸¸é 1³Ö°í lend·Î
-						+ lend + ": " + "\n";					//lend ³»¿ë(if ³ª while¹®)
+				expr += "isub " + "\n"					//ìŠ¤íƒì— ìˆëŠ” ë‘ ê°’ì„ ë¹¼ì„œ
+						+ "ifeq "+ l2 + "\n"			//ifeq : ìŠ¤íƒì— ìˆëŠ”ê°’ê³¼ 0ì„ ë¹„êµí›„ ê°™ìœ¼ë©´ l2ë¡œ ì í”„. ê°™ìœ¼ë©´ ë’¤ì—ì„œ ìŠ¤íƒì— 1ë„£ìŒ. ë‹¤ë¥´ë©´ 0ë„£ìŒ
+						+ "ldc 0" + "\n"				//ë‹¤ë¥´ë©´ 0ë„£ìŒ
+						+ "goto " + lend + "\n"			//lend:0ë„£ê³  if_stmtë‚˜ whileê°™ì€ê³³ìœ¼ë¡œ goto
+						+ l2 + ": "+ "\n" + "ldc 1" + "\n"	//ê°™ìœ¼ë©´ 1ë„£ê³  lendë¡œ
+						+ lend + ": " + "\n";					//lend ë‚´ìš©(if ë‚˜ whileë¬¸)
 				break;
 			case "!=":
 				expr += "isub " + "\n"
-						+ "ifne "+ l2 + "\n"			//ifne : ½ºÅÃ¿¡ ÀÖ´Â°ª°ú 0À» ºñ±³ÈÄ ´Ù¸£¸é l2·Î Á¡ÇÁ
+						+ "ifne "+ l2 + "\n"			//ifne : ìŠ¤íƒì— ìˆëŠ”ê°’ê³¼ 0ì„ ë¹„êµí›„ ë‹¤ë¥´ë©´ l2ë¡œ ì í”„
 						+ "ldc 0" + "\n"
 						+ "goto " + lend + "\n"
 						+ l2 + ": "+ "\n" + "ldc 1" + "\n"
 						+ lend + ": "+ "\n";
 				break;
-			case "<="://À§¿¡¼­ ifne¸¸ ¹Ù²ãº¸ÀÚ LE
+			case "<="://ìœ„ì—ì„œ ifneë§Œ ë°”ê¿”ë³´ì LE
 				// <(5) Fill here>
 				expr += "isub " + "\n"
-						+ "ifle "+ l2 + "\n"			//ifle : ½ºÅÃ¿¡ ÀÖ´Â°ªÀÌ 0º¸´Ù ÀÛ°Å³ª °°À¸¸é l2·Î Á¡ÇÁ
+						+ "ifle "+ l2 + "\n"			//ifle : ìŠ¤íƒì— ìˆëŠ”ê°’ì´ 0ë³´ë‹¤ ì‘ê±°ë‚˜ ê°™ìœ¼ë©´ l2ë¡œ ì í”„
 						+ "ldc 0" + "\n"
 						+ "goto " + lend + "\n"
 						+ l2 + ": "+ "\n" + "ldc 1" + "\n"
@@ -454,7 +469,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 			case "<":
 				// <(6) Fill here>
 				expr += "isub " + "\n"
-						+ "iflt "+ l2 + "\n"			//iflt : ½ºÅÃ¿¡ ÀÖ´Â°ªÀÌ 0º¸´Ù ÀÛÀ¸¸é l2·Î Á¡ÇÁ
+						+ "iflt "+ l2 + "\n"			//iflt : ìŠ¤íƒì— ìˆëŠ”ê°’ì´ 0ë³´ë‹¤ ì‘ìœ¼ë©´ l2ë¡œ ì í”„
 						+ "ldc 0" + "\n"
 						+ "goto " + lend + "\n"
 						+ l2 + ": " + "\n" + "ldc 1" + "\n"
@@ -464,7 +479,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 			case ">=":
 				// <(7) Fill here>
 				expr += "isub " + "\n"
-						+ "ifge "+ l2 + "\n"			//ifge : ½ºÅÃ¿¡ ÀÖ´Â°ªÀÌ 0º¸´Ù Å©°Å³ª °°À¸¸é l2·Î Á¡ÇÁ
+						+ "ifge "+ l2 + "\n"			//ifge : ìŠ¤íƒì— ìˆëŠ”ê°’ì´ 0ë³´ë‹¤ í¬ê±°ë‚˜ ê°™ìœ¼ë©´ l2ë¡œ ì í”„
 						+ "ldc 0" + "\n"
 						+ "goto " + lend + "\n"
 						+ l2 + ": " + "\n"+ "ldc 1" + "\n"
@@ -474,7 +489,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 			case ">":
 				// <(8) Fill here>
 				expr += "isub " + "\n"
-						+ "ifgt "+ l2 + "\n"			//ifgt : ½ºÅÃ¿¡ ÀÖ´Â°ªÀÌ 0º¸´Ù Å©¸é l2·Î Á¡ÇÁ
+						+ "ifgt "+ l2 + "\n"			//ifgt : ìŠ¤íƒì— ìˆëŠ”ê°’ì´ 0ë³´ë‹¤ í¬ë©´ l2ë¡œ ì í”„
 						+ "ldc 0" + "\n"
 						+ "goto " + lend + "\n"
 						+ l2 + ": " + "\n" + "ldc 1" + "\n"
@@ -482,23 +497,23 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 				break;
 
 			case "and":
-				expr +=  "ifne "+ lend + "\n"			//Ã¹¹øÂ° Á¶°Ç °á°ú°¡ ÂüÀÌ ¾Æ´Ï¸é
-						+ "pop" + "\n" + "ldc 0" + "\n"	//½ºÅÃ¿¡ °ÅÁşÀÓÀ» ¶æÇÏ´Â 0À»³Ö°í
-						+ lend + ": "+ "\n"; 			//º¸³»ÁÖ±â
+				expr +=  "ifne "+ lend + "\n"			//ì²«ë²ˆì§¸ ì¡°ê±´ ê²°ê³¼ê°€ ì°¸ì´ ì•„ë‹ˆë©´
+						+ "pop" + "\n" + "ldc 0" + "\n"	//ìŠ¤íƒì— ê±°ì§“ì„ì„ ëœ»í•˜ëŠ” 0ì„ë„£ê³ 
+						+ lend + ": "+ "\n"; 			//ë³´ë‚´ì£¼ê¸°
 				break;
 			case "or":
 				// <(9) Fill here>
-				expr +=  "ifeq "+ lend + "\n"			//Ã¹¹øÂ° Á¶°Ç °á°ú°¡ ÂüÀÌ¸é µÚ¿¡°Å º¼ ÇÊ¿äµµ ¾øÀÌ
-						+ "pop" + "\n" + "ldc 1" + "\n"	//½ºÅÃ¿¡ ÂüÀÓÀ» ¶æÇÏ´Â 1À» ³Ö°í
-						+ lend + ": "+ "\n"; 			//º¸³»ÁÖ±â.
+				expr +=  "ifeq "+ lend + "\n"			//ì²«ë²ˆì§¸ ì¡°ê±´ ê²°ê³¼ê°€ ì°¸ì´ë©´ ë’¤ì—ê±° ë³¼ í•„ìš”ë„ ì—†ì´
+						+ "pop" + "\n" + "ldc 1" + "\n"	//ìŠ¤íƒì— ì°¸ì„ì„ ëœ»í•˜ëŠ” 1ì„ ë„£ê³ 
+						+ lend + ": "+ "\n"; 			//ë³´ë‚´ì£¼ê¸°.
 				break;
 
 		}
 		return expr;
 	}
-	private String handleFunCall(MiniCParser.ExprContext ctx, String expr) {//ÇÔ¼öÃ³¸®.
+	private String handleFunCall(MiniCParser.ExprContext ctx, String expr) {//í•¨ìˆ˜ì²˜ë¦¬.
 		String fname = getFunName(ctx);		
-
+		
 		if (fname.equals("_print")) {		// System.out.println	
 			expr = "getstatic java/lang/System/out Ljava/io/PrintStream; "
 			  		+ newTexts.get(ctx.args()) 
@@ -507,8 +522,19 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 			expr = newTexts.get(ctx.args()) 
 					+ "invokestatic " + getCurrentClassName()+ "/" + symbolTable.getFunSpecStr(fname) + "\n";
 			
-			expr += "ÇöÀç ¸Ş¼Òµå : " + getCurrentMethodName() +"\n" + "È£ÃâµÈ ÇÔ¼ö : " + fname + "\n";
+			expr += "í˜„ì¬ ë©”ì†Œë“œ : " + getCurrentMethodName() +"\n" + "í˜¸ì¶œëœ í•¨ìˆ˜ : " + fname + "\n";
 			symbolTable.putMethodCall(getCurrentMethodName(), fname);
+			
+			if(drawFunctionCallGraph.currentFlowIsMain == true) {//ë©”ì¸ë¬¸ ê·¸ë¦¬ëŠ”ì¤‘ì´ë©´ depthê³„ì‚°.
+				drawFunctionCallGraph.depth++;
+			}
+			
+			drawFunctionCallGraph.drawCallState();//í˜¸ì¶œë ë•Œ ê·¸ë˜í”„ê·¸ë¦¬ê¸°.
+			
+			String calleeFunName = fname;//í•¨ìˆ˜ì•ˆì— í•¨ìˆ˜ê°€ í˜¸ì¶œë˜ëŠ” ê²½ìš° ê·¸ë˜í”„ ê·¸ë¦¼ ê·¸ë¦¬ê¸°.
+			drawFunctionCallGraph.appendGraph(drawFunctionCallGraph.getGraphFromMap(calleeFunName));
+//			drawFunctionCallGraph.depth++;
+//			drawFunctionCallGraph.drawNewFunction(fname, drawFunctionCallGraph.depth);
 		}	
 		
 		return expr;
@@ -517,7 +543,7 @@ public class BytecodeGenListener extends MiniCBaseListener implements ParseTreeL
 
 	// args	: expr (',' expr)* | ;
 	@Override
-	public void exitArgs(MiniCParser.ArgsContext ctx) {//argsÃ³¸®.
+	public void exitArgs(MiniCParser.ArgsContext ctx) {//argsì²˜ë¦¬.
 
 		String argsStr = "\n";
 		
